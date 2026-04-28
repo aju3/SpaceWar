@@ -1,0 +1,293 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Space Wars - Fixed Scroll</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;600&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            /* Allow scrolling on body initially */
+            min-height: 100%;
+            background-color: #020205;
+            color: #ffffff;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Lock body only when game is active */
+        body.game-active {
+            overflow: hidden;
+            position: fixed;
+        }
+
+        #landing {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            background: #020205;
+        }
+
+        #game-interface {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: #000;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .fade-in { animation: fadeIn 1s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scroll-hint {
+            position: relative;
+        }
+        .scroll-hint::after {
+            content: '';
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 40px;
+            background: linear-gradient(to bottom, #06b6d4, transparent);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Landing Page Container -->
+    <div id="landing">
+        <section class="h-screen flex flex-col items-center justify-center p-8 text-center">
+            <div class="max-w-md fade-in">
+                <h1 class="text-2xl md:text-3xl font-light leading-relaxed text-gray-200">
+                    This website exists for one reason. I just liked the domain name. 
+                    <span class="block mt-4 text-cyan-400 font-normal">There’s nothing here…</span>
+                    Maybe someday I’ll use it. Maybe not🙂
+                </h1>
+                <div class="mt-24 animate-bounce text-gray-500 text-xs tracking-[0.3em] uppercase scroll-hint">
+                    Scroll down
+                </div>
+            </div>
+        </section>
+
+        <section class="h-screen flex flex-col items-center justify-center p-8">
+            <button id="playBtn" class="px-12 py-5 font-bold tracking-widest text-white uppercase transition-all border-2 border-cyan-500 rounded-full active:scale-95 hover:bg-cyan-500 hover:text-black shadow-[0_0_20px_rgba(6,182,212,0.3)]">
+                play a game
+            </button>
+        </section>
+    </div>
+
+    <!-- Game View -->
+    <div id="game-interface">
+        <!-- UI Headers -->
+        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-10 pointer-events-none">
+            <div class="bg-black/40 p-2 rounded">
+                <p class="text-[10px] text-cyan-500 font-bold uppercase">Kills</p>
+                <p id="currentScore" class="text-2xl font-mono leading-none">0</p>
+            </div>
+            <div class="bg-black/40 p-2 rounded text-right">
+                <p class="text-[10px] text-purple-500 font-bold uppercase">High Score</p>
+                <p id="highScore" class="text-2xl font-mono leading-none">0</p>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Overlays -->
+        <div id="startOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-20 cursor-pointer text-center p-6">
+            <h2 id="statusTitle" class="text-4xl font-black text-cyan-400 mb-2">SPACE WARS</h2>
+            <p id="statusDesc" class="text-gray-400 text-sm uppercase tracking-widest mb-8">Drag to move ship</p>
+            <div class="w-16 h-16 border-2 border-white rounded-full flex items-center justify-center animate-pulse">
+                <div class="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const playBtn = document.getElementById('playBtn');
+        const landing = document.getElementById('landing');
+        const gameInterface = document.getElementById('game-interface');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startOverlay = document.getElementById('startOverlay');
+        const scoreElement = document.getElementById('currentScore');
+        const highscoreElement = document.getElementById('highScore');
+
+        let isPlaying = false;
+        let score = 0;
+        let highscore = localStorage.getItem('spaceWarsPortraitHS') || 0;
+        let animationId;
+        let frameCount = 0;
+
+        const player = {
+            x: 0, y: 0,
+            targetX: 0, targetY: 0,
+            w: 30, h: 40,
+            speed: 0.18,
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.fillStyle = Math.random() > 0.5 ? '#f90' : '#f30';
+                ctx.beginPath();
+                ctx.moveTo(this.w/2-3, this.h);
+                ctx.lineTo(this.w/2+3, this.h);
+                ctx.lineTo(this.w/2, this.h + 8 + Math.random()*8);
+                ctx.fill();
+                ctx.shadowBlur = 15; ctx.shadowColor = '#0ff';
+                ctx.fillStyle = '#0ff';
+                ctx.beginPath();
+                ctx.moveTo(this.w/2, 0);
+                ctx.lineTo(this.w, this.h);
+                ctx.lineTo(this.w/2, this.h-5);
+                ctx.lineTo(0, this.h);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            },
+            update() {
+                this.x += (this.targetX - this.x - this.w/2) * this.speed;
+                this.y += (this.targetY - this.y - this.h/2) * this.speed;
+                if (this.x < 0) this.x = 0;
+                if (this.x > canvas.width - this.w) this.x = canvas.width - this.w;
+                if (this.y < canvas.height * 0.3) this.y = canvas.height * 0.3;
+                if (this.y > canvas.height - this.h) this.y = canvas.height - this.h;
+            }
+        };
+
+        let bullets = [], enemies = [], stars = [];
+
+        function initStars() {
+            stars = [];
+            for(let i=0; i<40; i++) {
+                stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*2, v: 1 + Math.random()*3 });
+            }
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if(!isPlaying) {
+                player.targetX = canvas.width/2;
+                player.targetY = canvas.height * 0.85;
+                player.x = player.targetX - player.w/2;
+                player.y = player.targetY - player.h/2;
+            }
+            initStars();
+        }
+
+        function gameLoop() {
+            if (!isPlaying) return;
+            frameCount++;
+            ctx.fillStyle = '#020205';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#fff';
+            stars.forEach(s => {
+                s.y += s.v;
+                if(s.y > canvas.height) s.y = 0;
+                ctx.globalAlpha = s.s/2;
+                ctx.fillRect(s.x, s.y, s.s, s.s);
+            });
+            ctx.globalAlpha = 1;
+
+            player.update();
+            player.draw();
+
+            if(frameCount % 10 === 0) bullets.push({x: player.x + player.w/2 - 2, y: player.y, v: 12});
+            for(let i=bullets.length-1; i>=0; i--) {
+                bullets[i].y -= bullets[i].v;
+                ctx.fillStyle = '#0ff';
+                ctx.fillRect(bullets[i].x, bullets[i].y, 4, 10);
+                if(bullets[i].y < -20) bullets.splice(i, 1);
+            }
+
+            if(frameCount % 50 === 0) {
+                const size = 30 + Math.random()*20;
+                enemies.push({ x: Math.random()*(canvas.width-size), y: -size, w: size, h: size, v: 2 + (score/15), color: Math.random() > 0.5 ? '#f43' : '#63f' });
+            }
+            for(let i=enemies.length-1; i>=0; i--) {
+                let e = enemies[i];
+                e.y += e.v;
+                ctx.fillStyle = e.color;
+                ctx.fillRect(e.x, e.y, e.w, e.h);
+                if(player.x < e.x+e.w && player.x+player.w > e.x && player.y < e.y+e.h && player.y+player.h > e.y) gameOver();
+                for(let j=bullets.length-1; j>=0; j--) {
+                    let b = bullets[j];
+                    if(b.x < e.x+e.w && b.x+4 > e.x && b.y < e.y+e.h && b.y > e.y) {
+                        enemies.splice(i, 1);
+                        bullets.splice(j, 1);
+                        score++;
+                        scoreElement.innerText = score;
+                        break;
+                    }
+                }
+                if(e.y > canvas.height) enemies.splice(i, 1);
+            }
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+            startOverlay.style.display = 'flex';
+            document.getElementById('statusTitle').innerText = "GAME OVER";
+            document.getElementById('statusDesc').innerText = `Final Score: ${score} - Tap to Retry`;
+            if(score > highscore) {
+                highscore = score;
+                localStorage.setItem('spaceWarsPortraitHS', highscore);
+                highscoreElement.innerText = highscore;
+            }
+        }
+
+        function start() {
+            isPlaying = true;
+            score = 0;
+            scoreElement.innerText = "0";
+            bullets = []; enemies = []; frameCount = 0;
+            startOverlay.style.display = 'none';
+            gameLoop();
+        }
+
+        const input = (x, y) => {
+            player.targetX = x;
+            player.targetY = y - 50; 
+        };
+
+        playBtn.onclick = () => {
+            document.body.classList.add('game-active');
+            landing.style.display = 'none';
+            gameInterface.style.display = 'block';
+            resize();
+            highscoreElement.innerText = highscore;
+        };
+
+        startOverlay.onclick = start;
+        window.addEventListener('mousemove', e => input(e.clientX, e.clientY));
+        window.addEventListener('touchmove', e => {
+            if(isPlaying) e.preventDefault();
+            input(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+
+        window.onresize = resize;
+        resize();
+    </script>
+</body>
+</html>
+
+```
